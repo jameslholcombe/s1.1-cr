@@ -1,0 +1,25 @@
+name: s1-cr
+channels:
+  - pytorch
+  - huggingface
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pip=23.1.2
+  - pytorch=2.5.1
+  - torchvision=0.20.1
+  - torchaudio=2.5.1
+  - pandas=2.2.0
+  - ipykernel=6.28.0
+  - ipython=8.20.0
+  - pip:
+    - openai==1.56.1
+    - transformers==4.46.1
+    - wandb==0.17.3
+    - datasets==3.1.0
+    - accelerate==1.0.1
+    - vllm==0.6.4.post1
+    - gradio==4.44.0
+    - trl==0.12.0
+    - huggingface_hub
