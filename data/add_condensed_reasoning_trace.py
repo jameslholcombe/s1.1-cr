@@ -1,6 +1,6 @@
 reasoning_trace = "test"
 
-prompt = """
+base_prompt = """
 You are an AI assistant specialized in processing and structuring complex reasoning data for machine learning applications. Your primary task is to compress and formalize a given verbose, human-readable reasoning trace into a structured, labeled sequence according to a specific methodology I will provide.
 
 **Purpose:** This conversion is part of a project to train a language model to reason more efficiently by training on structured, condensed reasoning steps. The goal is to capture the logical flow of problem-solving, including the exploration of different ideas, points of confusion, blockages, and eventual breakthroughs. For this purpose, strict adherence to the specified format and labels is paramount, prioritizing structural conciseness and accurate labeling of reasoning steps (like exploration and blockage) over producing a flowing, grammatically perfect sentence for each step.
@@ -67,7 +67,7 @@ I [y ∈ $\cap_{x \in S}$ sphere(x, d/√2)]
 E [H is complete, spheres are closed]
 Z [Need intersection to be non-empty? FIP?]
 E [FIP: $\cap$ closed sets non-empty in complete space if finite $\cap$ is non-empty]
-Q [Need to show finite $\cap_{i=1}^n$ sphere(x_i, d/√2) is non-empty for any $\{x_i\} \subset S$]
+Q [Need to show finite $\cap_{i=1}^n$ sphere(x_i, d/√2) is non-empty for any ${x_i} \subset S$]
 A [Pairwise intersection holds: $d\sqrt{2} > d$]
 Z [Does pairwise intersection imply finite intersection for this structure?]
 I [Key Insight: Structure of S in infinite H]
@@ -82,6 +82,6 @@ K [Conclusion: y exists such that {√2/d(x-y)} is an OS]
 ---
 
 **Trace to Convert:**
+"""
 
-{reasoning_trace}
-""".format(reasoning_trace=reasoning_trace)
+prompt = base_prompt + reasoning_trace
