@@ -20,6 +20,8 @@ dependencies:
     - datasets==3.1.0
     - accelerate==1.0.1
     - vllm==0.6.4.post1
-    - gradio==4.44.0
+    - gradio==5.27.0
     - trl==0.12.0
     - huggingface_hub
+    - google-genai==1.12.1
+    - tqdm==4.67.1

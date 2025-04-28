@@ -1,96 +1,18 @@
+import json
 import os
 from time import sleep
 
-import google.generativeai as genai
 import pandas as pd
+from google import genai
+from google.genai import types
+from pydantic import BaseModel
 from tqdm import tqdm
 
 
-def get_condensed_trace(verbose_trace, model, retries=3, delay=1):
-    """
-    Get condensed reasoning trace from the model with retry logic
+# Define a Pydantic model for the condensed trace output
+class CondensedTrace(BaseModel):
+    condensed_reasoning_trace: str
 
-    Args:
-        verbose_trace (str): The verbose reasoning trace to condense
-        model: The Gemini model instance
-        retries (int): Number of retry attempts
-        delay (int): Delay between retries in seconds
-
-    Returns:
-        str: The condensed trace, or None if all retries fail
-    """
-    prompt = base_prompt + str(verbose_trace)
-
-    for attempt in range(retries):
-        try:
-            response = model.generate_content(
-                prompt,
-                generation_config={
-                    "temperature": 0.1,  # Low temperature for more deterministic output
-                    "top_p": 0.95,
-                    "top_k": 40,
-                },
-            )
-            return response.text.strip()
-        except Exception as e:
-            if attempt == retries - 1:
-                print(f"Failed after {retries} attempts: {e}")
-                return None
-            print(f"Attempt {attempt + 1} failed: {e}. Retrying...")
-            sleep(delay)
-
-
-def process_dataset(input_path, model, checkpoint_interval=100):
-    """
-    Process the dataset to add condensed reasoning traces
-
-    Args:
-        input_path (str): Path to input parquet file
-        model: The Gemini model instance
-        checkpoint_interval (int): How often to save checkpoints
-    """
-    print("Loading dataset...")
-    df = pd.read_parquet(input_path)
-
-    # Initialize the new column
-    df["deepseek_thinking_trajectory_condensed"] = None
-    total_rows = len(df)
-
-    print(f"Processing {total_rows} rows...")
-    progress_bar = tqdm(range(total_rows), desc="Processing rows")
-    for idx in progress_bar:
-        verbose_trace = df.at[idx, "deepseek_thinking_trajectory"]
-        if pd.isna(verbose_trace):
-            continue
-
-        condensed_trace = get_condensed_trace(verbose_trace, model)
-        df.at[idx, "deepseek_thinking_trajectory_condensed"] = condensed_trace
-
-        # Save checkpoint if needed
-        if (idx + 1) % checkpoint_interval == 0:
-            checkpoint_path = "s1.1-cr/data/condensed_traces_checkpoint.parquet"
-            df.to_parquet(checkpoint_path, index=False)
-            progress_bar.set_postfix({"checkpoint": f"saved at {idx + 1} rows"})
-
-    # Save final results
-    output_path = "s1.1-cr/data/updated_data_with_condensed_traces.parquet"
-    df.to_parquet(output_path, index=False)
-    print(f"\nProcessing complete. Results saved to {output_path}")
-
-
-if __name__ == "__main__":
-    # Configure the Gemini API
-    GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-    if not GOOGLE_API_KEY:
-        raise ValueError("Please set the GOOGLE_API_KEY environment variable")
-
-    # Initialize the model
-    genai.configure(api_key=GOOGLE_API_KEY)
-    model = genai.GenerativeModel("gemini-2.5-flash-preview-04-17")
-
-    # Process the dataset
-    input_path = "hf://datasets/simplescaling/s1K-1.1/data/train-00000-of-00001.parquet"
-    df = process_dataset(input_path, model)
 
 base_prompt = """
 You are an AI assistant specialized in processing and structuring complex reasoning data for machine learning applications. Your primary task is to compress and formalize a given verbose, human-readable reasoning trace into a structured, labeled sequence according to a specific methodology I will provide.
@@ -176,26 +98,100 @@ K [Conclusion: y exists such that {√2/d(x-y)} is an OS]
 **Trace to Convert:**
 """
 
-# Initialize the new column
-df["deepseek_thinking_trajectory_condensed"] = None
 
-# Process each row
-print(f"Processing {len(df)} rows...")
-for idx in tqdm(df.index):
-    verbose_trace = df.at[idx, "deepseek_thinking_trajectory"]
-    if pd.isna(verbose_trace):
-        continue
+def get_condensed_trace(verbose_trace, model, retries=3, delay=1):
+    """
+    Get condensed reasoning trace from the model with retry logic and structured output
 
-    condensed_trace = get_condensed_trace(verbose_trace, model)
-    df.at[idx, "deepseek_thinking_trajectory_condensed"] = condensed_trace
+    Args:
+        verbose_trace (str): The verbose reasoning trace to condense
+        model: The Gemini model instance
+        retries (int): Number of retry attempts
+        delay (int): Delay between retries in seconds
 
-    # Save checkpoint every 100 rows
-    if (idx + 1) % 100 == 0:
-        checkpoint_path = "s1.1-cr/data/condensed_traces_checkpoint.parquet"
-        df.to_parquet(checkpoint_path, index=False)
-        print(f"\nCheckpoint saved at row {idx + 1}")
+    Returns:
+        str: The condensed trace, or None if all retries fail
+    """
+    prompt = base_prompt + str(verbose_trace)
 
-# Save final results
-output_path = "s1.1-cr/data/updated_data_with_condensed_traces.parquet"
-df.to_parquet(output_path, index=False)
-print(f"\nProcessing complete. Results saved to {output_path}")
+    for attempt in range(retries):
+        try:
+            response = model.generate_content(
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=CondensedTrace,
+                    thinking_config=types.ThinkingConfig(),
+                ),
+            )
+
+            # Extract the condensed trace from the structured response
+            try:
+                response_text = response.text
+                response_dict = json.loads(response_text)
+                condensed_reasoning_trace = response_dict.get("condensed_reasoning_trace")
+                if condensed_reasoning_trace:
+                    return condensed_reasoning_trace
+            except (AttributeError, IndexError, KeyError) as e:
+                print(f"Failed to parse structured response: {e}")
+                return None
+
+        except Exception as e:
+            if attempt == retries - 1:
+                print(f"Failed after {retries} attempts: {e}")
+                return None
+            print(f"Attempt {attempt + 1} failed: {e}. Retrying...")
+            sleep(delay)
+
+
+def process_dataset(input_path, model, checkpoint_interval=100):
+    """
+    Process the dataset to add condensed reasoning traces
+
+    Args:
+        input_path (str): Path to input parquet file
+        model: The Gemini model instance
+        checkpoint_interval (int): How often to save checkpoints
+    """
+    print("Loading dataset...")
+    df = pd.read_parquet(input_path)
+
+    # Initialize the new column
+    df["deepseek_thinking_trajectory_condensed"] = None
+    total_rows = len(df)
+
+    print(f"Processing {total_rows} rows...")
+    progress_bar = tqdm(range(total_rows), desc="Processing rows")
+    for idx in progress_bar:
+        verbose_trace = df.at[idx, "deepseek_thinking_trajectory"]
+        if pd.isna(verbose_trace):
+            continue
+
+        condensed_trace = get_condensed_trace(verbose_trace, model)
+        df.at[idx, "deepseek_thinking_trajectory_condensed"] = condensed_trace
+
+        # Save checkpoint if needed
+        if (idx + 1) % checkpoint_interval == 0:
+            checkpoint_path = "s1.1-cr/data/condensed_traces_checkpoint.parquet"
+            df.to_parquet(checkpoint_path, index=False)
+            progress_bar.set_postfix({"checkpoint": f"saved at {idx + 1} rows"})
+
+    # Save final results
+    output_path = "s1.1-cr/data/updated_data_with_condensed_traces.parquet"
+    df.to_parquet(output_path, index=False)
+    print(f"\nProcessing complete. Results saved to {output_path}")
+
+
+if __name__ == "__main__":
+    # Configure the Gemini API
+    GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+    if not GOOGLE_API_KEY:
+        raise ValueError("Please set the GOOGLE_API_KEY environment variable")
+
+    # Initialize the model
+    genai.configure(api_key=GOOGLE_API_KEY)
+    model = genai.GenerativeModel("gemini-2.5-flash-preview-04-17")
+
+    # Process the dataset
+    input_path = "hf://datasets/simplescaling/s1K-1.1/data/train-00000-of-00001.parquet"
+    df = process_dataset(input_path, model)
