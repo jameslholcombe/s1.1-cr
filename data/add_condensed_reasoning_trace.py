@@ -127,8 +127,9 @@ def get_condensed_trace(verbose_trace, client, retries=3, delay=1):
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
                     response_schema=CondensedTrace,
-                    thinking_config=types.ThinkingConfig(),
+                    thinking_config=types.ThinkingConfig(thinking_budget=8000),
                     temperature=0.1,
+                    max_output_tokens=60000,
                 ),
             )
 
