@@ -2,3 +2,6 @@ ckpts/
 
 wandb/
 
+.env
+data/condensed_traces_checkpoint.parquet
+data/updated_data_with_condensed_traces.parquet

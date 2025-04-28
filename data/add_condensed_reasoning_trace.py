@@ -1,12 +1,17 @@
 import json
 import os
+from pathlib import Path
 from time import sleep
 
 import pandas as pd
+from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from pydantic import BaseModel
 from tqdm import tqdm
+
+# Load environment variables from .env file
+load_dotenv(Path(__file__).parents[1] / ".env")
 
 
 # Define a Pydantic model for the condensed trace output
@@ -99,7 +104,7 @@ K [Conclusion: y exists such that {√2/d(x-y)} is an OS]
 """
 
 
-def get_condensed_trace(verbose_trace, model, retries=3, delay=1):
+def get_condensed_trace(verbose_trace, client, retries=3, delay=1):
     """
     Get condensed reasoning trace from the model with retry logic and structured output
 
@@ -116,12 +121,14 @@ def get_condensed_trace(verbose_trace, model, retries=3, delay=1):
 
     for attempt in range(retries):
         try:
-            response = model.generate_content(
-                contents=prompt,
+            response = client.models.generate_content(
+                model="gemini-2.5-flash-preview-04-17",
+                contents=[prompt],
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
                     response_schema=CondensedTrace,
                     thinking_config=types.ThinkingConfig(),
+                    temperature=0.1,
                 ),
             )
 
@@ -144,7 +151,7 @@ def get_condensed_trace(verbose_trace, model, retries=3, delay=1):
             sleep(delay)
 
 
-def process_dataset(input_path, model, checkpoint_interval=100):
+def process_dataset(input_path, client, checkpoint_interval=10):
     """
     Process the dataset to add condensed reasoning traces
 
@@ -153,11 +160,25 @@ def process_dataset(input_path, model, checkpoint_interval=100):
         model: The Gemini model instance
         checkpoint_interval (int): How often to save checkpoints
     """
-    print("Loading dataset...")
-    df = pd.read_parquet(input_path)
+    checkpoint_path = "s1.1-cr/data/condensed_traces_checkpoint.parquet"
 
-    # Initialize the new column
-    df["deepseek_thinking_trajectory_condensed"] = None
+    # Check for existing checkpoint
+    if os.path.exists(checkpoint_path):
+        print("Found existing checkpoint, checking if we can resume...")
+        checkpoint_df = pd.read_parquet(checkpoint_path)
+        if not checkpoint_df["deepseek_thinking_trajectory_condensed"].isna().all():
+            print("Resuming from checkpoint...")
+            df = checkpoint_df
+        else:
+            print("Checkpoint exists but has no condensed traces, starting fresh...")
+            df = pd.read_parquet(input_path)
+    else:
+        print("Loading dataset...")
+        df = pd.read_parquet(input_path)
+
+    # Initialize the new column if it doesn't exist
+    if "deepseek_thinking_trajectory_condensed" not in df.columns:
+        df["deepseek_thinking_trajectory_condensed"] = None
     total_rows = len(df)
 
     print(f"Processing {total_rows} rows...")
@@ -167,7 +188,7 @@ def process_dataset(input_path, model, checkpoint_interval=100):
         if pd.isna(verbose_trace):
             continue
 
-        condensed_trace = get_condensed_trace(verbose_trace, model)
+        condensed_trace = get_condensed_trace(verbose_trace, client)
         df.at[idx, "deepseek_thinking_trajectory_condensed"] = condensed_trace
 
         # Save checkpoint if needed
@@ -189,9 +210,8 @@ if __name__ == "__main__":
         raise ValueError("Please set the GOOGLE_API_KEY environment variable")
 
     # Initialize the model
-    genai.configure(api_key=GOOGLE_API_KEY)
-    model = genai.GenerativeModel("gemini-2.5-flash-preview-04-17")
+    client = genai.Client(api_key=GOOGLE_API_KEY)
 
     # Process the dataset
     input_path = "hf://datasets/simplescaling/s1K-1.1/data/train-00000-of-00001.parquet"
-    df = process_dataset(input_path, model)
+    df = process_dataset(input_path, client)
